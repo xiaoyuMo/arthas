@@ -2,7 +2,6 @@ package com.taobao.arthas.core.command.monitor200;
 
 import com.taobao.arthas.core.advisor.AdviceListener;
 import com.taobao.arthas.core.command.Constants;
-import com.taobao.arthas.core.shell.cli.Completion;
 import com.taobao.arthas.core.shell.command.CommandProcess;
 import com.taobao.arthas.core.util.SearchUtils;
 import com.taobao.arthas.core.util.matcher.GroupMatcher;
@@ -33,6 +32,7 @@ import java.util.List;
         "  trace *StringUtils isBlank params[0].length==1\n" +
         "  trace *StringUtils isBlank '#cost>100'\n" +
         "  trace -E org\\\\.apache\\\\.commons\\\\.lang\\\\.StringUtils isBlank\n" +
+        "  trace -E com.test.ClassA|org.test.ClassB method1|method2|method3\n" +
         Constants.WIKI + Constants.WIKI_HOME + "trace")
 public class TraceCommand extends EnhancerCommand {
 
@@ -145,12 +145,6 @@ public class TraceCommand extends EnhancerCommand {
         } else {
             return new PathTraceAdviceListener(this, process);
         }
-    }
-
-    @Override
-    protected boolean completeExpress(Completion completion) {
-        completion.complete(EMPTY);
-        return true;
     }
 
     /**

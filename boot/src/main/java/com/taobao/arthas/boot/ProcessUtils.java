@@ -3,7 +3,6 @@ package com.taobao.arthas.boot;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -12,11 +11,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.InputMismatchException;
 
 import com.taobao.arthas.common.AnsiLog;
 import com.taobao.arthas.common.ExecutingCommand;
 import com.taobao.arthas.common.IOUtils;
 import com.taobao.arthas.common.JavaVersionUtils;
+import com.taobao.arthas.common.PidUtils;
 
 /**
  *
@@ -24,34 +25,27 @@ import com.taobao.arthas.common.JavaVersionUtils;
  *
  */
 public class ProcessUtils {
-    private static String PID = "-1";
+    private static String FOUND_JAVA_HOME = null;
 
-    static {
-        // https://stackoverflow.com/a/7690178
-        String jvmName = ManagementFactory.getRuntimeMXBean().getName();
-        int index = jvmName.indexOf('@');
-
-        if (index > 0) {
-            try {
-                PID = Long.toString(Long.parseLong(jvmName.substring(0, index)));
-            } catch (Throwable e) {
-                // ignore
-            }
-        }
-    }
-
-    public static String getPid() {
-        return PID;
-    }
-
-    public static int select(boolean v) {
+    @SuppressWarnings("resource")
+    public static int select(boolean v, int telnetPortPid) throws InputMismatchException {
         Map<Integer, String> processMap = listProcessByJps(v);
+        // Put the port that is already listening at the first
+        if (telnetPortPid > 0 && processMap.containsKey(telnetPortPid)) {
+            String telnetPortProcess = processMap.get(telnetPortPid);
+            processMap.remove(telnetPortPid);
+            Map<Integer, String> newProcessMap = new LinkedHashMap<Integer, String>();
+            newProcessMap.put(telnetPortPid, telnetPortProcess);
+            newProcessMap.putAll(processMap);
+            processMap = newProcessMap;
+        }
 
         if (processMap.isEmpty()) {
-            AnsiLog.info("Can not find java process. Try to pass pid in command line.");
+            AnsiLog.info("Can not find java process. Try to pass <pid> in command line.");
             return -1;
         }
 
+        AnsiLog.info("Found existing java process, please choose one and hit RETURN.");
         // print list
         int count = 1;
         for (String process : processMap.values()) {
@@ -100,14 +94,14 @@ public class ProcessUtils {
 
         String[] command = null;
         if (v) {
-            command = new String[] { jps, "-v" };
+            command = new String[] { jps, "-v", "-l" };
         } else {
-            command = new String[] { jps };
+            command = new String[] { jps, "-l" };
         }
 
         List<String> lines = ExecutingCommand.runNative(command);
 
-        int currentPid = Integer.parseInt(ProcessUtils.getPid());
+        int currentPid = Integer.parseInt(PidUtils.currentPid());
         for (String line : lines) {
             String[] strings = line.trim().split("\\s+");
             if (strings.length < 1) {
@@ -117,7 +111,7 @@ public class ProcessUtils {
             if (pid == currentPid) {
                 continue;
             }
-            if (strings.length >= 2 && strings[1].equals("Jps")) { // skip jps
+            if (strings.length >= 2 && isJspProcess(strings[1])) { // skip jps
                 continue;
             }
 
@@ -127,9 +121,70 @@ public class ProcessUtils {
         return result;
     }
 
+    /**
+     * <pre>
+     * 1. Try to find java home from System Property java.home
+     * 2. If jdk > 8, FOUND_JAVA_HOME set to java.home
+     * 3. If jdk <= 8, try to find tools.jar under java.home
+     * 4. If tools.jar do not exists under java.home, try to find System env JAVA_HOME
+     * 5. If jdk <= 8 and tools.jar do not exists under JAVA_HOME, throw IllegalArgumentException
+     * </pre>
+     *
+     * @return
+     */
+    public static String findJavaHome() {
+        if (FOUND_JAVA_HOME != null) {
+            return FOUND_JAVA_HOME;
+        }
+
+        String javaHome = System.getProperty("java.home");
+
+        if (JavaVersionUtils.isLessThanJava9()) {
+            File toolsJar = new File(javaHome, "lib/tools.jar");
+            if (!toolsJar.exists()) {
+                toolsJar = new File(javaHome, "../lib/tools.jar");
+            }
+            if (!toolsJar.exists()) {
+                // maybe jre
+                toolsJar = new File(javaHome, "../../lib/tools.jar");
+            }
+
+            if (toolsJar.exists()) {
+                FOUND_JAVA_HOME = javaHome;
+                return FOUND_JAVA_HOME;
+            }
+
+            if (!toolsJar.exists()) {
+                AnsiLog.debug("Can not find tools.jar under java.home: " + javaHome);
+                String javaHomeEnv = System.getenv("JAVA_HOME");
+                if (javaHomeEnv != null && !javaHomeEnv.isEmpty()) {
+                    AnsiLog.debug("Try to find tools.jar in System Env JAVA_HOME: " + javaHomeEnv);
+                    // $JAVA_HOME/lib/tools.jar
+                    toolsJar = new File(javaHomeEnv, "lib/tools.jar");
+                    if (!toolsJar.exists()) {
+                        // maybe jre
+                        toolsJar = new File(javaHomeEnv, "../lib/tools.jar");
+                    }
+                }
+
+                if (toolsJar.exists()) {
+                    AnsiLog.info("Found java home from System Env JAVA_HOME: " + javaHomeEnv);
+                    FOUND_JAVA_HOME = javaHomeEnv;
+                    return FOUND_JAVA_HOME;
+                }
+
+                throw new IllegalArgumentException("Can not find tools.jar under java home: " + javaHome
+                                + ", please try to start arthas-boot with full path java. Such as /opt/jdk/bin/java -jar arthas-boot.jar");
+            }
+        } else {
+            FOUND_JAVA_HOME = javaHome;
+        }
+        return FOUND_JAVA_HOME;
+    }
+
     public static void startArthasCore(int targetPid, List<String> attachArgs) {
         // find java/java.exe, then try to find tools.jar
-        String javaHome = System.getProperty("java.home");
+        String javaHome = findJavaHome();
 
         // find java/java.exe
         File javaPath = findJava();
@@ -138,14 +193,10 @@ public class ProcessUtils {
                             "Can not find java/java.exe executable file under java home: " + javaHome);
         }
 
-        File toolsJar = new File(javaHome, "../lib/tools.jar");
-        if (!toolsJar.exists()) {
-            // maybe jre
-            toolsJar = new File(javaHome, "../../lib/tools.jar");
-        }
+        File toolsJar = findToolsJar();
 
         if (JavaVersionUtils.isLessThanJava9()) {
-            if (!toolsJar.exists()) {
+            if (toolsJar == null || !toolsJar.exists()) {
                 throw new IllegalArgumentException("Can not find tools.jar under java home: " + javaHome);
             }
         }
@@ -153,7 +204,7 @@ public class ProcessUtils {
         List<String> command = new ArrayList<String>();
         command.add(javaPath.getAbsolutePath());
 
-        if (toolsJar.exists()) {
+        if (toolsJar != null && toolsJar.exists()) {
             command.add("-Xbootclasspath/a:" + toolsJar.getAbsolutePath());
         }
 
@@ -213,7 +264,7 @@ public class ProcessUtils {
     }
 
     private static File findJava() {
-        String javaHome = System.getProperty("java.home");
+        String javaHome = findJavaHome();
         String[] paths = { "bin/java", "bin/java.exe", "../bin/java", "../bin/java.exe" };
 
         List<File> javaList = new ArrayList<File>();
@@ -226,7 +277,7 @@ public class ProcessUtils {
         }
 
         if (javaList.isEmpty()) {
-            AnsiLog.debug("Can not find java under current java home: " + javaHome);
+            AnsiLog.debug("Can not find java/java.exe under current java home: " + javaHome);
             return null;
         }
 
@@ -247,7 +298,31 @@ public class ProcessUtils {
         return javaList.get(0);
     }
 
+    private static File findToolsJar() {
+        if (JavaVersionUtils.isGreaterThanJava8()) {
+            return null;
+        }
+
+        String javaHome = findJavaHome();
+        File toolsJar = new File(javaHome, "lib/tools.jar");
+        if (!toolsJar.exists()) {
+            toolsJar = new File(javaHome, "../lib/tools.jar");
+        }
+        if (!toolsJar.exists()) {
+            // maybe jre
+            toolsJar = new File(javaHome, "../../lib/tools.jar");
+        }
+
+        if (!toolsJar.exists()) {
+            throw new IllegalArgumentException("Can not find tools.jar under java home: " + javaHome);
+        }
+
+        AnsiLog.debug("Found tools.jar: " + toolsJar.getAbsolutePath());
+        return toolsJar;
+    }
+
     private static File findJps() {
+        // Try to find jps under java.home and System env JAVA_HOME
         String javaHome = System.getProperty("java.home");
         String[] paths = { "bin/jps", "bin/jps.exe", "../bin/jps", "../bin/jps.exe" };
 
@@ -295,4 +370,7 @@ public class ProcessUtils {
         return jpsList.get(0);
     }
 
+    private static boolean isJspProcess(String mainClassName) {
+        return "sun.tools.jps.Jps".equals(mainClassName) || "jdk.jcmd/sun.tools.jps.Jps".equals(mainClassName);
+    }
 }

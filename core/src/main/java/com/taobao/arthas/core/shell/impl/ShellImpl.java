@@ -18,21 +18,15 @@ import com.taobao.arthas.core.shell.system.Job;
 import com.taobao.arthas.core.shell.system.JobController;
 import com.taobao.arthas.core.shell.system.impl.InternalCommandManager;
 import com.taobao.arthas.core.shell.system.impl.JobControllerImpl;
-import com.taobao.arthas.core.shell.system.impl.JobImpl;
 import com.taobao.arthas.core.shell.term.Term;
 import com.taobao.arthas.core.util.Constants;
-import com.taobao.arthas.core.util.DateUtils;
 import com.taobao.arthas.core.util.LogUtil;
 import com.taobao.middleware.logger.Logger;
 
 import java.lang.instrument.Instrumentation;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
-import java.util.SortedMap;
-import java.util.TreeMap;
 import java.util.UUID;
 
 /**
@@ -119,8 +113,6 @@ public class ShellImpl implements Shell {
 
         if (welcome != null && welcome.length() > 0) {
             term.write(welcome + "\n");
-            term.write("pid: " + session.get(Session.PID) + "\n");
-            term.write("time: " + DateUtils.getCurrentDate() + "\n\n");
         }
         return this;
     }

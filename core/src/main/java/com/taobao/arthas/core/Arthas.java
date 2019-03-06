@@ -3,6 +3,7 @@ package com.taobao.arthas.core;
 import com.sun.tools.attach.VirtualMachine;
 import com.sun.tools.attach.VirtualMachineDescriptor;
 import com.taobao.arthas.common.AnsiLog;
+import com.taobao.arthas.common.JavaVersionUtils;
 import com.taobao.arthas.core.config.Configure;
 import com.taobao.middleware.cli.CLI;
 import com.taobao.middleware.cli.CLIs;
@@ -73,14 +74,14 @@ public class Arthas {
             }
 
             Properties targetSystemProperties = virtualMachine.getSystemProperties();
-            String targetJavaVersion = targetSystemProperties.getProperty("java.specification.version");
-            String currentJavaVersion = System.getProperty("java.specification.version");
+            String targetJavaVersion = JavaVersionUtils.javaVersionStr(targetSystemProperties);
+            String currentJavaVersion = JavaVersionUtils.javaVersionStr();
             if (targetJavaVersion != null && currentJavaVersion != null) {
                 if (!targetJavaVersion.equals(currentJavaVersion)) {
                     AnsiLog.warn("Current VM java version: {} do not match target VM java version: {}, attach may fail.",
                                     currentJavaVersion, targetJavaVersion);
-                    AnsiLog.warn("Target VM JAVA_HOME is {}, try to set the same JAVA_HOME.",
-                                    targetSystemProperties.getProperty("java.home"));
+                    AnsiLog.warn("Target VM JAVA_HOME is {}, arthas-boot JAVA_HOME is {}, try to set the same JAVA_HOME.",
+                                    targetSystemProperties.getProperty("java.home"), System.getProperty("java.home"));
                 }
             }
 

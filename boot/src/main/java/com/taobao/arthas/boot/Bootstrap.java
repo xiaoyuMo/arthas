@@ -11,7 +11,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.TimeZone;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
+import java.util.InputMismatchException;
 
 import javax.xml.parsers.ParserConfigurationException;
 
@@ -41,7 +44,7 @@ import com.taobao.middleware.cli.annotations.Summary;
                 + "  java -jar arthas-boot.jar --telnet-port 9999 --http-port -1\n"
                 + "  java -jar arthas-boot.jar -c 'sysprop; thread' <pid>\n"
                 + "  java -jar arthas-boot.jar -f batch.as <pid>\n"
-                + "  java -jar arthas-boot.jar --use-version 3.0.5\n"
+                + "  java -jar arthas-boot.jar --use-version 3.1.0\n"
                 + "  java -jar arthas-boot.jar --versions\n"
                 + "  java -jar arthas-boot.jar --session-timeout 3600\n" + "  java -jar arthas-boot.jar --attach-only\n"
                 + "  java -jar arthas-boot.jar --repo-mirror aliyun --use-http\n" + "WIKI:\n"
@@ -63,6 +66,9 @@ public class Bootstrap {
      * @see com.taobao.arthas.core.config.Configure#DEFAULT_SESSION_TIMEOUT_SECONDS
      */
     private Long sessionTimeout;
+
+    private Integer height = null;
+    private Integer width = null;
 
     private boolean verbose = false;
 
@@ -87,9 +93,9 @@ public class Bootstrap {
     private boolean versions;
 
     /**
-     * download from maven center repository by default
+     * download from maven repository. if timezone is +0800, default value is 'aliyun', else is 'center'.
      */
-    private String repoMirror = "center";
+    private String repoMirror;
 
     /**
      * enforce use http to download arthas. default use https
@@ -132,7 +138,7 @@ public class Bootstrap {
     }
 
     @Option(longName = "session-timeout")
-    @Description("The session timeout seconds, default 300")
+    @Description("The session timeout seconds, default 1800 (30min)")
     public void setSessionTimeout(Long sessionTimeout) {
         this.sessionTimeout = sessionTimeout;
     }
@@ -185,6 +191,18 @@ public class Bootstrap {
         this.batchFile = batchFile;
     }
 
+    @Option(longName = "height")
+    @Description("arthas-client terminal height")
+    public void setHeight(int height) {
+        this.height = height;
+    }
+
+    @Option(longName = "width")
+    @Description("arthas-client terminal width")
+    public void setWidth(int width) {
+        this.width = width;
+    }
+
     @Option(shortName = "v", longName = "verbose", flag = true)
     @Description("Verbose, print debug info.")
     public void setVerbose(boolean verbose) {
@@ -194,100 +212,123 @@ public class Bootstrap {
     public static void main(String[] args) throws ParserConfigurationException, SAXException, IOException,
                     ClassNotFoundException, NoSuchMethodException, SecurityException, IllegalAccessException,
                     IllegalArgumentException, InvocationTargetException {
+        Package bootstrapPackage = Bootstrap.class.getPackage();
+        if (bootstrapPackage != null) {
+            String arthasBootVersion = bootstrapPackage.getImplementationVersion();
+            if (arthasBootVersion != null) {
+                AnsiLog.info("arthas-boot version: " + arthasBootVersion);
+            }
+        }
+
         String mavenMetaData = null;
 
-        Bootstrap bootStrap = new Bootstrap();
+        Bootstrap bootstrap = new Bootstrap();
 
         CLI cli = CLIConfigurator.define(Bootstrap.class);
         CommandLine commandLine = cli.parse(Arrays.asList(args));
 
         try {
-            CLIConfigurator.inject(commandLine, bootStrap);
+            CLIConfigurator.inject(commandLine, bootstrap);
         } catch (Throwable e) {
             e.printStackTrace();
             System.out.println(usage(cli));
             System.exit(1);
         }
 
-        if (bootStrap.isVerbose()) {
+        if (bootstrap.isVerbose()) {
             AnsiLog.level(Level.ALL);
         }
-        if (bootStrap.isHelp()) {
+        if (bootstrap.isHelp()) {
             System.out.println(usage(cli));
             System.exit(0);
         }
 
-        if (bootStrap.isVersions()) {
+        if (bootstrap.getRepoMirror() == null || bootstrap.getRepoMirror().trim().isEmpty()) {
+            bootstrap.setRepoMirror("center");
+            // if timezone is +0800, default repo mirror is aliyun
+            if (TimeUnit.MILLISECONDS.toHours(TimeZone.getDefault().getOffset(System.currentTimeMillis())) == 8) {
+                bootstrap.setRepoMirror("aliyun");
+            }
+        }
+        AnsiLog.debug("Repo mirror:" + bootstrap.getRepoMirror());
+
+        if (bootstrap.isVersions()) {
             if (mavenMetaData == null) {
-                mavenMetaData = DownloadUtils.readMavenMetaData(bootStrap.getRepoMirror(), bootStrap.isuseHttp());
+                mavenMetaData = DownloadUtils.readMavenMetaData(bootstrap.getRepoMirror(), bootstrap.isuseHttp());
             }
             System.out.println(UsageRender.render(listVersions(mavenMetaData)));
             System.exit(0);
         }
 
-        if (JavaVersionUtils.isJava6()) {
-            bootStrap.setuseHttp(true);
-            AnsiLog.debug("Java version is 1.6, only support http, set useHttp to true.");
+        if (JavaVersionUtils.isJava6() || JavaVersionUtils.isJava7()) {
+            bootstrap.setuseHttp(true);
+            AnsiLog.debug("Java version is {}, only support http, set useHttp to true.",
+                            JavaVersionUtils.javaVersionStr());
         }
 
         // check telnet/http port
         int telnetPortPid = -1;
         int httpPortPid = -1;
-        if (bootStrap.getTelnetPort() > 0) {
-            telnetPortPid = SocketUtils.findTcpListenProcess(bootStrap.getTelnetPort());
+        if (bootstrap.getTelnetPort() > 0) {
+            telnetPortPid = SocketUtils.findTcpListenProcess(bootstrap.getTelnetPort());
             if (telnetPortPid > 0) {
-                AnsiLog.info("Process {} already using port {}", telnetPortPid, bootStrap.getTelnetPort());
+                AnsiLog.info("Process {} already using port {}", telnetPortPid, bootstrap.getTelnetPort());
             }
         }
-        if (bootStrap.getHttpPort() > 0) {
-            httpPortPid = SocketUtils.findTcpListenProcess(bootStrap.getHttpPort());
+        if (bootstrap.getHttpPort() > 0) {
+            httpPortPid = SocketUtils.findTcpListenProcess(bootstrap.getHttpPort());
             if (httpPortPid > 0) {
-                AnsiLog.info("Process {} already using port {}", httpPortPid, bootStrap.getHttpPort());
+                AnsiLog.info("Process {} already using port {}", httpPortPid, bootstrap.getHttpPort());
             }
         }
 
-        int pid = bootStrap.getPid();
+        int pid = bootstrap.getPid();
         // select pid
         if (pid < 0) {
-            pid = ProcessUtils.select(bootStrap.isVerbose());
+            try {
+                pid = ProcessUtils.select(bootstrap.isVerbose(), telnetPortPid);
+            } catch (InputMismatchException e) {
+                System.out.println("Please input an integer to select pid.");
+                System.exit(1);
+            }
             if (pid < 0) {
-                System.out.println("Please select an avaliable pid.");
+                System.out.println("Please select an available pid.");
                 System.exit(1);
             }
         }
 
         if (telnetPortPid > 0 && pid != telnetPortPid) {
             AnsiLog.error("Target process {} is not the process using port {}, you will connect to an unexpected process.",
-                            pid, bootStrap.getTelnetPort());
-            AnsiLog.error("If you still want to attach target process {}, Try to set a different telnet port by using --telnet-port argument.",
-                            pid);
-            AnsiLog.error("Or try to shutdown the process {} using the telnet port first.", telnetPortPid);
+                            pid, bootstrap.getTelnetPort());
+            AnsiLog.error("1. Try to restart arthas-boot, select process {}, shutdown it first.",
+                            telnetPortPid);
+            AnsiLog.error("2. Or try to use different telnet port, for example: java -jar arthas-boot.jar --telnet-port 9998 --http-port -1");
             System.exit(1);
         }
 
         if (httpPortPid > 0 && pid != httpPortPid) {
             AnsiLog.error("Target process {} is not the process using port {}, you will connect to an unexpected process.",
-                            pid, bootStrap.getHttpPort());
-            AnsiLog.error("If you still want to attach target process {}, Try to set a different http port by using --http-port argument.",
-                            pid);
-            AnsiLog.error("Or try to shutdown the process {} using the http port first.", httpPortPid);
+                            pid, bootstrap.getHttpPort());
+            AnsiLog.error("1. Try to restart arthas-boot, select process {}, shutdown it first.",
+                            httpPortPid);
+            AnsiLog.error("2. Or try to use different http port, for example: java -jar arthas-boot.jar --telnet-port 9998 --http-port 9999", httpPortPid);
             System.exit(1);
         }
 
         // find arthas home
         File arthasHomeDir = null;
-        if (bootStrap.getArthasHome() != null) {
-            verifyArthasHome(bootStrap.getArthasHome());
-            arthasHomeDir = new File(bootStrap.getArthasHome());
+        if (bootstrap.getArthasHome() != null) {
+            verifyArthasHome(bootstrap.getArthasHome());
+            arthasHomeDir = new File(bootstrap.getArthasHome());
         }
-        if (arthasHomeDir == null && bootStrap.getUseVersion() != null) {
+        if (arthasHomeDir == null && bootstrap.getUseVersion() != null) {
             // try to find from ~/.arthas/lib
             File specialVersionDir = new File(System.getProperty("user.home"), ".arthas" + File.separator + "lib"
-                            + File.separator + bootStrap.getUseVersion() + File.separator + "arthas");
+                            + File.separator + bootstrap.getUseVersion() + File.separator + "arthas");
             if (!specialVersionDir.exists()) {
                 // try to download arthas from remote server.
-                DownloadUtils.downArthasPackaging(bootStrap.getRepoMirror(), bootStrap.isuseHttp(),
-                                bootStrap.getUseVersion(), ARTHAS_LIB_DIR.getAbsolutePath());
+                DownloadUtils.downArthasPackaging(bootstrap.getRepoMirror(), bootstrap.isuseHttp(),
+                                bootstrap.getUseVersion(), ARTHAS_LIB_DIR.getAbsolutePath());
             }
             verifyArthasHome(specialVersionDir.getAbsolutePath());
             arthasHomeDir = specialVersionDir;
@@ -297,10 +338,10 @@ public class Bootstrap {
         if (arthasHomeDir == null) {
             CodeSource codeSource = Bootstrap.class.getProtectionDomain().getCodeSource();
             if (codeSource != null) {
-                String bootstrap = codeSource.getLocation().getFile();
+                String bootJarPath = codeSource.getLocation().getFile();
                 try {
-                    verifyArthasHome(new File(bootstrap).getParent());
-                    arthasHomeDir = new File(bootstrap).getParentFile();
+                    verifyArthasHome(new File(bootJarPath).getParent());
+                    arthasHomeDir = new File(bootJarPath).getParentFile();
                 } catch (Exception e) {
                     // ignore
                 }
@@ -310,7 +351,11 @@ public class Bootstrap {
 
         // try to download from remote server
         if (arthasHomeDir == null) {
-            ARTHAS_LIB_DIR.mkdirs();
+            boolean checkFile =  ARTHAS_LIB_DIR.exists() || ARTHAS_LIB_DIR.mkdirs();
+            if(!checkFile){
+                AnsiLog.error("cannot create directory {}: maybe permission denied", ARTHAS_LIB_DIR.getAbsolutePath());
+                System.exit(1);
+            }
 
             /**
              * <pre>
@@ -328,7 +373,7 @@ public class Bootstrap {
             }
 
             if (mavenMetaData == null) {
-                mavenMetaData = DownloadUtils.readMavenMetaData(bootStrap.getRepoMirror(), bootStrap.isuseHttp());
+                mavenMetaData = DownloadUtils.readMavenMetaData(bootstrap.getRepoMirror(), bootstrap.isuseHttp());
             }
 
             String remoteLastestVersion = DownloadUtils.readMavenReleaseVersion(mavenMetaData);
@@ -338,7 +383,7 @@ public class Bootstrap {
                 if (remoteLastestVersion == null) {
                     // exit
                     AnsiLog.error("Can not find Arthas under local: {} and remote: {}", ARTHAS_LIB_DIR,
-                                    bootStrap.getRepoMirror());
+                                    bootstrap.getRepoMirror());
                     System.exit(1);
                 } else {
                     needDownload = true;
@@ -354,7 +399,7 @@ public class Bootstrap {
             }
             if (needDownload) {
                 // try to download arthas from remote server.
-                DownloadUtils.downArthasPackaging(bootStrap.getRepoMirror(), bootStrap.isuseHttp(),
+                DownloadUtils.downArthasPackaging(bootstrap.getRepoMirror(), bootstrap.isuseHttp(),
                                 remoteLastestVersion, ARTHAS_LIB_DIR.getAbsolutePath());
                 localLastestVersion = remoteLastestVersion;
             }
@@ -368,7 +413,7 @@ public class Bootstrap {
         AnsiLog.info("arthas home: " + arthasHomeDir);
 
         if (telnetPortPid > 0 && pid == telnetPortPid) {
-            AnsiLog.info("The target process already listen port {}, skip attach.", bootStrap.getTelnetPort());
+            AnsiLog.info("The target process already listen port {}, skip attach.", bootstrap.getTelnetPort());
         } else {
             // start arthas-core.jar
             List<String> attachArgs = new ArrayList<String>();
@@ -377,18 +422,18 @@ public class Bootstrap {
             attachArgs.add("-pid");
             attachArgs.add("" + pid);
             attachArgs.add("-target-ip");
-            attachArgs.add(bootStrap.getTargetIp());
+            attachArgs.add(bootstrap.getTargetIp());
             attachArgs.add("-telnet-port");
-            attachArgs.add("" + bootStrap.getTelnetPort());
+            attachArgs.add("" + bootstrap.getTelnetPort());
             attachArgs.add("-http-port");
-            attachArgs.add("" + bootStrap.getHttpPort());
+            attachArgs.add("" + bootstrap.getHttpPort());
             attachArgs.add("-core");
             attachArgs.add(new File(arthasHomeDir, "arthas-core.jar").getAbsolutePath());
             attachArgs.add("-agent");
             attachArgs.add(new File(arthasHomeDir, "arthas-agent.jar").getAbsolutePath());
-            if (bootStrap.getSessionTimeout() != null) {
+            if (bootstrap.getSessionTimeout() != null) {
                 attachArgs.add("-session-timeout");
-                attachArgs.add("" + bootStrap.getSessionTimeout());
+                attachArgs.add("" + bootstrap.getSessionTimeout());
             }
 
             AnsiLog.info("Try to attach process " + pid);
@@ -398,7 +443,7 @@ public class Bootstrap {
             AnsiLog.info("Attach process {} success.", pid);
         }
 
-        if (bootStrap.isAttachOnly()) {
+        if (bootstrap.isAttachOnly()) {
             System.exit(0);
         }
 
@@ -410,20 +455,28 @@ public class Bootstrap {
         Method mainMethod = telnetConsoleClas.getMethod("main", String[].class);
         List<String> telnetArgs = new ArrayList<String>();
 
-        if (bootStrap.getCommand() != null) {
+        if (bootstrap.getCommand() != null) {
             telnetArgs.add("-c");
-            telnetArgs.add(bootStrap.getCommand());
+            telnetArgs.add(bootstrap.getCommand());
         }
-        if (bootStrap.getBatchFile() != null) {
+        if (bootstrap.getBatchFile() != null) {
             telnetArgs.add("-f");
-            telnetArgs.add(bootStrap.getBatchFile());
+            telnetArgs.add(bootstrap.getBatchFile());
+        }
+        if (bootstrap.getHeight() != null) {
+            telnetArgs.add("--height");
+            telnetArgs.add("" + bootstrap.getHeight());
+        }
+        if (bootstrap.getWidth() != null) {
+            telnetArgs.add("--width");
+            telnetArgs.add("" + bootstrap.getWidth());
         }
 
         // telnet port ,ip
-        telnetArgs.add(bootStrap.getTargetIp());
-        telnetArgs.add("" + bootStrap.getTelnetPort());
+        telnetArgs.add(bootstrap.getTargetIp());
+        telnetArgs.add("" + bootstrap.getTelnetPort());
 
-        AnsiLog.info("arthas-client connect {} {}", bootStrap.getTargetIp(), bootStrap.getTelnetPort());
+        AnsiLog.info("arthas-client connect {} {}", bootstrap.getTargetIp(), bootstrap.getTelnetPort());
         AnsiLog.debug("Start arthas-client.jar args: " + telnetArgs);
         mainMethod.invoke(null, new Object[] { telnetArgs.toArray(new String[0]) });
     }
@@ -450,7 +503,14 @@ public class Bootstrap {
 
     private static List<String> listNames(File dir) {
         List<String> names = new ArrayList<String>();
-        for (File file : dir.listFiles()) {
+        if (!dir.exists()) {
+            return names;
+        }
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return names;
+        }
+        for (File file : files) {
             String name = file.getName();
             if (name.startsWith(".") || file.isFile()) {
                 continue;
@@ -543,5 +603,13 @@ public class Bootstrap {
 
     public boolean isVersions() {
         return versions;
+    }
+
+    public Integer getHeight() {
+        return height;
+    }
+
+    public Integer getWidth() {
+        return width;
     }
 }

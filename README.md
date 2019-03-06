@@ -38,6 +38,13 @@ Arthas was built to solve these issues. A developer can trouble-shoot your produ
 * Supports command line interactive mode, with auto-complete feature enabled.
 * Supports telnet and websocket, which enables both local and remote diagnostics with command line and browsers.
 * Supports JDK 6+
+* Supports Linux/Mac/Windows
+
+
+### Online Tutorials(Recommend)
+
+* [Arthas Basics](https://alibaba.github.io/arthas/arthas-tutorials?language=en&id=arthas-basics)
+* [Arthas Advanced](https://alibaba.github.io/arthas/arthas-tutorials?language=en&id=arthas-advanced)
 
 ### Quick start
 
@@ -71,11 +78,13 @@ You can enter its interactive interface by executing `as.sh`, or execute `as.sh 
 
 ### Documentation
 
+* [Online Tutorials(Recommend)](https://alibaba.github.io/arthas/arthas-tutorials?language=en)
 * [User manual](https://alibaba.github.io/arthas/en)
 * [Installation](https://alibaba.github.io/arthas/en/install-detail.html)
 * [Quick start](https://alibaba.github.io/arthas/en/quick-start.html)
 * [Advanced usage](https://alibaba.github.io/arthas/en/advanced-use.html)
 * [Commands](https://alibaba.github.io/arthas/en/commands.html)
+* [Docker](https://alibaba.github.io/arthas/en/docker.html)
 * [User cases](https://github.com/alibaba/arthas/issues?q=label%3Auser-case)
 * [Questions and answers](https://github.com/alibaba/arthas/issues?utf8=%E2%9C%93&q=label%3Aquestion-answered+)
 * [How to contribute](https://github.com/alibaba/arthas/blob/master/CONTRIBUTING.md)
@@ -94,7 +103,7 @@ You can enter its interactive interface by executing `as.sh`, or execute `as.sh 
 
 See what is eating your cpu (ranked by top cpu usage) and what is going on there in one glance:
 
-```
+```bash
 $ thread -n 3
 "as-command-execute-daemon" Id=29 cpuUsage=75% RUNNABLE
     at sun.management.ThreadImpl.dumpThreads0(Native Method)
@@ -160,11 +169,28 @@ public interface Servlet {
 }
 ```
 
+#### mc
+
+Memory compiler, compiles `.java` files into `.class` files in memory.
+
+```bash
+mc /tmp/Test.java
+```
+
+#### redefine
+
+Load the external `*.class` files to re-define the loaded classes in JVM.
+
+```bash
+redefine /tmp/Test.class
+redefine -c 327a647b /tmp/Test.class /tmp/Test\$Inner.class
+```
+
 #### sc
 
 Search any loaded class with detailed information.
 
-```
+```bash
 $ sc -d org.springframework.web.context.support.XmlWebApplicationContext
  class-info        org.springframework.web.context.support.XmlWebApplicationContext
  code-source       /Users/xxx/work/test/WEB-INF/lib/spring-web-3.2.11.RELEASE.jar
@@ -200,7 +226,7 @@ $ sc -d org.springframework.web.context.support.XmlWebApplicationContext
 
 View the call stack of `test.arthas.TestStack#doGet`:
 
-```
+```bash
 $ stack test.arthas.TestStack doGet
 Press Ctrl+C to abort.
 Affect(class-cnt:1 , method-cnt:1) cost in 286 ms.
@@ -241,7 +267,7 @@ See what is slowing down your method invocation with trace command:
 
 Watch the first parameter and thrown exception of `test.arthas.TestWatch#doGet` only if it throws exception.
 
-```
+```bash
 $ watch test.arthas.TestWatch doGet {params[0], throwExp} -e
 Press Ctrl+C to abort.
 Affect(class-cnt:1 , method-cnt:1) cost in 65 ms.
@@ -255,7 +281,7 @@ ts=2018-09-18 10:26:28;result=@ArrayList[
 
 Monitor a specific method invocation statistics, including total number of invocations, average response time, success rate, every 5 seconds:
 
-```
+```bash
 $ monitor -c 5 org.apache.dubbo.demo.provider.DemoServiceImpl sayHello
 Press Ctrl+C to abort.
 Affect(class-cnt:1 , method-cnt:1) cost in 109 ms.
@@ -276,7 +302,7 @@ Affect(class-cnt:1 , method-cnt:1) cost in 109 ms.
 
 Record method invocation data, so that you can check the method invocation parameters, returned value and thrown exception later. It works as if you could come back and replay the past method invocation via time tunnel.
 
-```
+```bash
 $ tt -t org.apache.dubbo.demo.provider.DemoServiceImpl sayHello
 Press Ctrl+C to abort.
 Affect(class-cnt:1 , method-cnt:1) cost in 75 ms.
@@ -295,7 +321,7 @@ Affect(class-cnt:1 , method-cnt:1) cost in 75 ms.
 
 #### Classloader
 
-```
+```bash
 $ classloader
  name                                                  numberOfInstances  loadedCountTotal
  BootstrapClassLoader                                  1                  3346
@@ -317,9 +343,62 @@ $ classloader
 ![web console](site/src/site/sphinx/_static/web-console-local.png)
 
 
+### Known Users
+
+Welcome to register the company name in this issue: https://github.com/alibaba/arthas/issues/111 (in order of registration)
+
+![Alibaba](static/alibaba.png)
+![Alipay](static/alipay.png)
+![Aliyun](static/aliyun.png)
+![Taobao](static/taobao.png)
+![Tmall](static/tmall.png)
+![微医](static/weiyi.png)
+![卓越教育](static/zhuoyuejiaoyu.png)
+![狐狸金服](static/hulijingfu.png)
+![三体云](static/santiyun.png)
+![证大文化](static/zhengdawenhua.png)
+![Acmedcare+](static/acmedcare.png)
+![好慷](static/homeking365_log.png)
+![来电科技](static/laidian.png)
+![四格互联](static/sigehulian.png)
+![ICBC](static/icbc.png)
+![陆鹰](static/luying.png)
+![玩友时代](static/wangyoushidai.png)
+![她社区](static/tashequ.png)
+![龙腾出行](static/longtengchuxing.png)
+![foscam](static/foscam.png)
+![二维火](static/2dfire.png)
+![lanxum](static/lanxum_com.png)
+![纳里健康](static/ngarihealth.png)
+![掌门1对1](static/zhangmen.png)
+![offcn](static/offcn.png)
+![sia](static/sia.png)
+![振安资产](static/zhenganzichang.png)
+![菠萝](static/bolo.png)
+![中通快递](static/zto.png)
+![光点科技](static/guangdian.png)
+![广州工程技术职业学院](static/gzvtc.jpg)
+![mstar](static/mstar.png)
+![xwbank](static/xwbank.png)
+![imexue](static/imexue.png)
+![keking](static/keking.png)
+![secoo](static/secoo.jpg)
+![viax](static/viax.png)
+![yanedu](static/yanedu.png)
+
 ### Credit
+
+#### Contributors
+
+This project exists thanks to all the people who contribute.
+
+<a href="https://github.com/alibaba/arthas/graphs/contributors"><img src="https://opencollective.com/arthas/contributors.svg?width=890&button=false" /></a>
+
+#### Projects
 
 * [greys-anatomy](https://github.com/oldmanpushcart/greys-anatomy): The Arthas code base has derived from Greys, we thank for the excellent work done by Greys.
 * [termd](https://github.com/termd/termd): Arthas's terminal implementation is based on termd, an open source library for writing terminal applications in Java.
 * [crash](https://github.com/crashub/crash): Arthas's text based user interface rendering is based on codes extracted from [here](https://github.com/crashub/crash/tree/1.3.2/shell)
 * [cli](https://github.com/eclipse-vertx/vert.x/tree/master/src/main/java/io/vertx/core/cli): Arthas's command line interface implementation is based on cli, open sourced by vert.x
+* [compiler](https://github.com/skalogs/SkaETL/tree/master/compiler) Arthas's memory compiler.
+* [Apache Commons Net](https://commons.apache.org/proper/commons-net/) Arthas's telnet client.
